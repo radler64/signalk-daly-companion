@@ -97,7 +97,10 @@ module.exports = function (app) {
       const min = Math.max(0, Math.round((pausedUntil - Date.now()) / 60000));
       app.setPluginStatus(`Daly-App-Modus aktiv – noch ${min} min, dann automatisch weiter`);
     } else {
-      app.setPluginStatus(`Bereit – Daly-Plugin läuft (${batteries().length} Bänke überwacht)`);
+      const cfg = readDalyCfg();
+      app.setPluginStatus(cfg && cfg.enabled === false
+        ? 'Daly-Plugin ist manuell deaktiviert – /resume oder Schalter aus→ein schaltet es wieder ein'
+        : `Bereit – Daly-Plugin läuft (${batteries().length} Bänke überwacht)`);
     }
   }
 
