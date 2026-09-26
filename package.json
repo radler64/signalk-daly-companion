@@ -1,0 +1,13 @@
+{
+  "name": "signalk-daly-companion",
+  "version": "0.1.0",
+  "description": "Companion for signalk-daly-bms-ble: pause button that frees Bluetooth for the Daly app (auto-resume), battery alarms, and a compact Daly-style web view.",
+  "main": "index.js",
+  "keywords": ["signalk-node-server-plugin", "signalk-webapp", "signalk-category-instruments", "daly", "bms", "battery"],
+  "signalk-plugin-enabled-by-default": false,
+  "author": "Dieter Radler",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/radler64/signalk-daly-companion.git" },
+  "files": ["index.js", "public", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" }
+}
