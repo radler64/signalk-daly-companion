@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Daly BMS</title>
+<title>Bordenergie</title>
 <style>
 :root{--bg:#0f1216;--card:#181d24;--fg:#e8ecf1;--mut:#8a94a3;--ok:#2fbf71;--warn:#f0b429;--bad:#ef4b4b;--acc:#3b9cff;--line:#2a313b}
 @media(prefers-color-scheme:light){:root{--bg:#f2f4f7;--card:#fff;--fg:#14181f;--mut:#667085;--line:#e1e5eb}}
@@ -28,16 +28,37 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:1
 .alarms{margin-top:8px;font-size:12.5px}.alarms div{padding:3px 0;color:var(--bad)}.alarms .warn{color:var(--warn)}
 .stale{opacity:.5}.hint{color:var(--mut);font-size:12px;padding:0 12px 10px}
 </style></head><body>
-<header><span class="dot" id="dot"></span><h1>Daly BMS <small id="mode" style="color:var(--mut);font-weight:400"></small></h1>
+<header><span class="dot" id="dot"></span><h1>Bordenergie <small id="mode" style="color:var(--mut);font-weight:400"></small></h1>
 <button id="btn">…</button></header>
 <main id="main"></main>
 <div class="hint" id="hint"></div>
 <script>
 const PLUGIN='/plugins/signalk-daly-companion', LABELS={};
-const st={}, notes={}; let paused=false, until=null, cfg={pauseMinutes:30}, banks=[];
+const st={}, E={}, notes={}; let paused=false, until=null, cfg={pauseMinutes:30}, banks=[];
 const $=id=>document.getElementById(id);
 const K=273.15, f=(v,d=2)=>typeof v==='number'?v.toFixed(d):'–';
 function get(id,p){const o=st[id]||{};return o[p]}
+const ev=(p,max=90000)=>{const e=E[p];return e&&Date.now()-e.t<max?e.v:undefined};
+function energyCard(){
+  const solar=Object.keys(E).filter(k=>/^electrical\.solar\.[^.]+\.panelPower$/.test(k)).map(k=>k.split('.')[2]);
+  const shunt=ev('electrical.batteries.shunt.voltage')!==undefined;
+  if(!solar.length&&!shunt) return '';
+  let pv=0,out=0,rows='';
+  for(const id of solar){
+    const b=`electrical.solar.${id}.`, w=ev(b+'panelPower'), a=ev(b+'current'), v=ev(b+'voltage'), y=ev(b+'yieldToday',3600e3), m=ev(b+'chargingMode');
+    if(typeof w==='number') pv+=w; if(typeof a==='number'&&typeof v==='number') out+=a*v;
+    rows+=`<span>${id.toUpperCase()}</span><b>${f(w,0)} W · ${f(a,1)} A</b><span>${m||'–'}${typeof y==='number'?' · heute '+(y/3600).toFixed(0)+' Wh':''}</span>`;
+  }
+  const sv=ev('electrical.batteries.shunt.voltage'), sa=ev('electrical.batteries.shunt.current'), sw=ev('electrical.batteries.shunt.power'), ssoc=ev('electrical.batteries.shunt.capacity.stateOfCharge'), tr=ev('electrical.batteries.shunt.capacity.timeRemaining',600e3);
+  const load=(solar.length&&typeof sw==='number')?Math.max(0,out-sw):undefined;
+  const om=ev('electrical.converters.orion.chargingMode')??ev('electrical.chargers.orion.chargingMode'), oin=ev('electrical.converters.orion.input.voltage')??ev('electrical.chargers.orion.input.voltage');
+  const trs=typeof tr==='number'?(tr>=864000?'>10 d':tr>=86400?(tr/86400).toFixed(1)+' d':(tr/3600).toFixed(1)+' h'):'–';
+  return `<section class="card"><h2>Energie 24 V<small>SmartShunt · Victron</small></h2>
+  <div class="big"><div><b style="color:var(--ok)">${f(pv,0)}</b><span>W Solar</span></div><div><b style="color:${typeof sw==='number'&&sw<0?'var(--warn)':'var(--fg)'}">${typeof sw==='number'?(sw>0?'+':'')+sw.toFixed(0):'–'}</b><span>W Batterie</span></div><div><b>${f(load,0)}</b><span>W Verbrauch</span></div><div><b>${ssoc!=null?(ssoc*100).toFixed(0):'–'}</b><span>% SOC Shunt</span></div></div>
+  <div class="soc"><i style="width:${ssoc!=null?ssoc*100:0}%;background:${ssoc<0.2?'var(--bad)':ssoc<0.3?'var(--warn)':'var(--ok)'}"></i></div>
+  <div class="kv">${rows}<span>Shunt</span><b>${f(sv)} V · ${f(sa,1)} A</b><span>Restzeit ${trs}</span>
+  <span>Orion 24→12</span><b>${om||'–'}</b><span>${typeof oin==='number'?'Eingang '+f(oin)+' V':''}</span></div></section>`;
+}
 function render(){
   const main=$('main'); let html='';
   for(const id of banks){
@@ -58,6 +79,7 @@ function render(){
     <div class="cells">${cells.map(([n,cv])=>`<div class="cell ${n===minC?'min':''} ${n===maxC?'max':''} ${bal.includes(n)?'bal':''}"><span>${n}</span> <b>${(cv*1000).toFixed(0)}</b><div class="bar"><i style="width:${Math.max(4,(cv-lo)/(hi-lo||1)*100)}%"></i></div></div>`).join('')}</div>
     <div class="alarms">${errs.map(e=>`<div>⚠ ${e}</div>`).join('')}${nts.map(([,n])=>`<div class="${n.state}">${n.state==='alarm'?'⚠':'•'} ${n.message||''}</div>`).join('')}</div></section>`;
   }
+  html=energyCard()+html;
   main.innerHTML=html||'<p class="hint">Keine Bänke in der Daly-Plugin-Konfiguration.</p>';
   $('btn').textContent=paused?`App-Modus beenden (${Math.max(0,Math.round((new Date(until)-Date.now())/60000))} min)`:`Daly-App-Modus (${cfg.pauseMinutes} min)`;
   $('btn').className=paused?'stop':'pause';
@@ -70,10 +92,11 @@ async function loadStatus(){
 $('btn').onclick=async()=>{ $('btn').disabled=true; await fetch(PLUGIN+(paused?'/resume':'/pause')+'?format=json'); await loadStatus(); $('btn').disabled=false; };
 function connect(){
   const ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/signalk/v1/stream?subscribe=none');
-  ws.onopen=()=>{ $('dot').className='dot on'; ws.send(JSON.stringify({context:'vessels.self',subscribe:[{path:'electrical.batteries.*',period:1000},{path:'notifications.electrical.batteries.*',period:1000}]})); };
+  ws.onopen=()=>{ $('dot').className='dot on'; ws.send(JSON.stringify({context:'vessels.self',subscribe:[{path:'electrical.*',period:1000},{path:'notifications.electrical.batteries.*',period:1000}]})); };
   ws.onclose=()=>{ $('dot').className='dot'; setTimeout(connect,3000); };
   ws.onmessage=e=>{ const m=JSON.parse(e.data); if(!m.updates) return;
     for(const u of m.updates) for(const {path,value} of (u.values||[])){
+      E[path]={v:value,t:Date.now()};
       let mm=path.match(/^electrical\.batteries\.([^.]+)\.(.+)$/);
       if(mm){ (st[mm[1]]=st[mm[1]]||{})[mm[2]]=value; st[mm[1]]._ts=Date.now(); if(!banks.includes(mm[1])&&!/^daly/.test(mm[1])&&mm[2]==='voltage'&&LABELS[mm[1]]) banks.push(mm[1]); continue; }
       if(path==='electrical.batteries.dalyAppMode'){ paused=!!value; }
