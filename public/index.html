@@ -18,7 +18,9 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:1
 .big{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:4px 0 8px}
 .big div{text-align:center}.big b{display:block;font-size:22px;font-variant-numeric:tabular-nums}.big span{color:var(--mut);font-size:11px}
 .soc{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:2px 0 8px}.soc i{display:block;height:100%;background:var(--ok)}
-.kv{display:grid;grid-template-columns:repeat(3,auto 1fr);gap:4px 6px;font-size:12.5px;align-items:baseline}.kv span{color:var(--mut);white-space:nowrap}.kv b{font-weight:500;font-variant-numeric:tabular-nums}
+.kv{display:grid;grid-template-columns:repeat(3,auto 1fr);gap:4px 6px;font-size:12.5px;align-items:baseline}.kv span{color:var(--mut);white-space:nowrap}.kv b{font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+@media(max-width:420px){.kv{grid-template-columns:repeat(2,auto 1fr)}}
+.kv2{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12.5px;align-items:baseline}.kv2 span{color:var(--mut);white-space:nowrap}.kv2 b{font-weight:500;font-variant-numeric:tabular-nums}.kv2 i{font-style:normal;color:var(--mut)}
 .chips{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}.chip{padding:3px 8px;border-radius:999px;font-size:12px;background:var(--line)}
 .chip.ok{background:rgba(47,191,113,.18);color:var(--ok)}.chip.bad{background:rgba(239,75,75,.18);color:var(--bad)}.chip.warn{background:rgba(240,180,41,.18);color:var(--warn)}
 .cells{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:4px 8px;margin-top:6px}
@@ -48,10 +50,10 @@ function energyCard(){
   for(const id of solar){
     const b=`electrical.solar.${id}.`, w=ev(b+'panelPower'), a=ev(b+'current'), v=ev(b+'voltage'), y=ev(b+'yieldToday',3600e3), m=ev(b+'chargingMode');
     if(typeof w==='number') pv+=w; if(typeof a==='number'&&typeof v==='number') out+=a*v;
-    rows+=`<span>${id.toUpperCase()}</span><b>${f(w,0)} W · ${f(a,1)} A</b><span>${m||'–'}${typeof y==='number'?' · heute '+(y/3600).toFixed(0)+' Wh':''}</span>`;
+    rows+=`<span>${id.toUpperCase()}</span><b>${f(w,0)} W · ${f(a,1)} A <i>· ${m||'–'}${typeof y==='number'?' · heute '+(y/3600).toFixed(0)+' Wh':''}</i></b>`;
     const hist=(solarHist[id]||[]).filter(d=>d.date!==todayKey()).slice(-3);
-    if(hist.length){ const best=hist.reduce((a,b)=>b.wh>a.wh?b:a);
-      rows+=`<span>letzte ${hist.length} T</span><b>${hist.map(d=>`${d.date.slice(8,10)}.${d.date.slice(5,7)}. ${kwh(d.wh)}`).join(' · ')}</b><span>max ${kwh(best.wh)} (${best.date.slice(8,10)}.${best.date.slice(5,7)}., Spitze ${best.peakW} W)</span>`; }
+    if(hist.length){ const best=hist.reduce((a,b)=>b.wh>a.wh?b:a); const dm=d=>`${d.date.slice(8,10)}.${d.date.slice(5,7)}.`;
+      rows+=`<span>letzte ${hist.length} T</span><b>${hist.map(d=>`${dm(d)} ${kwh(d.wh)}`).join(' · ')} <i>· max ${kwh(best.wh)} (${dm(best)}, Spitze ${best.peakW} W)</i></b>`; }
   }
   const sv=ev('electrical.batteries.shunt.voltage'), sa=ev('electrical.batteries.shunt.current'), sw=ev('electrical.batteries.shunt.power'), ssoc=ev('electrical.batteries.shunt.capacity.stateOfCharge'), tr=ev('electrical.batteries.shunt.capacity.timeRemaining',600e3);
   const load=(solar.length&&typeof sw==='number')?Math.max(0,out-sw):undefined;
@@ -60,8 +62,8 @@ function energyCard(){
   return `<section class="card"><h2>Energie 24 V<small>SmartShunt · Victron</small></h2>
   <div class="big"><div><b style="color:var(--ok)">${f(pv,0)}</b><span>W Solar</span></div><div><b style="color:${typeof sw==='number'&&sw<0?'var(--warn)':'var(--fg)'}">${typeof sw==='number'?(sw>0?'+':'')+sw.toFixed(0):'–'}</b><span>W Batterie</span></div><div><b>${f(load,0)}</b><span>W Verbrauch</span></div><div><b>${ssoc!=null?(ssoc*100).toFixed(0):'–'}</b><span>% SOC Shunt</span></div></div>
   <div class="soc"><i style="width:${ssoc!=null?ssoc*100:0}%;background:${ssoc<0.2?'var(--bad)':ssoc<0.3?'var(--warn)':'var(--ok)'}"></i></div>
-  <div class="kv">${rows}<span>Shunt</span><b>${f(sv)} V · ${f(sa,1)} A</b><span>Restzeit ${trs}</span>
-  <span>Orion 24→12</span><b>${om||'–'}</b><span>${typeof oin==='number'?'Eingang '+f(oin)+' V':''}</span></div></section>`;
+  <div class="kv2">${rows}<span>Shunt</span><b>${f(sv)} V · ${f(sa,1)} A <i>· Restzeit ${trs}</i></b>
+  <span>Orion 24→12</span><b>${om||'–'}${typeof oin==='number'?' <i>· Eingang '+f(oin)+' V</i>':''}</b></div></section>`;
 }
 function render(){
   const main=$('main'); let html='';
