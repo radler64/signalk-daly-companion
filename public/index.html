@@ -34,10 +34,11 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:1
 <div class="hint" id="hint"></div>
 <script>
 const PLUGIN='/plugins/signalk-daly-companion', LABELS={};
-const st={}, E={}, notes={}; let paused=false, until=null, cfg={pauseMinutes:30}, banks=[];
+const st={}, E={}, notes={}; let paused=false, until=null, cfg={pauseMinutes:30}, banks=[], solarHist={};
 const $=id=>document.getElementById(id);
 const K=273.15, f=(v,d=2)=>typeof v==='number'?v.toFixed(d):'–';
 function get(id,p){const o=st[id]||{};return o[p]}
+const kwh=v=>v>=1000?(v/1000).toFixed(2)+' kWh':v+' Wh'; const todayKey=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)};
 const ev=(p,max=90000)=>{const e=E[p];return e&&Date.now()-e.t<max?e.v:undefined};
 function energyCard(){
   const solar=Object.keys(E).filter(k=>/^electrical\.solar\.[^.]+\.panelPower$/.test(k)).map(k=>k.split('.')[2]);
@@ -48,6 +49,9 @@ function energyCard(){
     const b=`electrical.solar.${id}.`, w=ev(b+'panelPower'), a=ev(b+'current'), v=ev(b+'voltage'), y=ev(b+'yieldToday',3600e3), m=ev(b+'chargingMode');
     if(typeof w==='number') pv+=w; if(typeof a==='number'&&typeof v==='number') out+=a*v;
     rows+=`<span>${id.toUpperCase()}</span><b>${f(w,0)} W · ${f(a,1)} A</b><span>${m||'–'}${typeof y==='number'?' · heute '+(y/3600).toFixed(0)+' Wh':''}</span>`;
+    const hist=(solarHist[id]||[]).filter(d=>d.date!==todayKey()).slice(-3);
+    if(hist.length){ const best=hist.reduce((a,b)=>b.wh>a.wh?b:a);
+      rows+=`<span>letzte ${hist.length} T</span><b>${hist.map(d=>`${d.date.slice(8,10)}.${d.date.slice(5,7)}. ${kwh(d.wh)}`).join(' · ')}</b><span>max ${kwh(best.wh)} (${best.date.slice(8,10)}.${best.date.slice(5,7)}., Spitze ${best.peakW} W)</span>`; }
   }
   const sv=ev('electrical.batteries.shunt.voltage'), sa=ev('electrical.batteries.shunt.current'), sw=ev('electrical.batteries.shunt.power'), ssoc=ev('electrical.batteries.shunt.capacity.stateOfCharge'), tr=ev('electrical.batteries.shunt.capacity.timeRemaining',600e3);
   const load=(solar.length&&typeof sw==='number')?Math.max(0,out-sw):undefined;
@@ -87,7 +91,7 @@ function render(){
 }
 async function loadStatus(){
   const r=await fetch(PLUGIN+'/status').then(r=>r.json());
-  paused=r.paused; until=r.until; cfg=r; banks=r.batteries.map(b=>b.id); r.batteries.forEach(b=>LABELS[b.id]=b.label); render();
+  paused=r.paused; until=r.until; cfg=r; banks=r.batteries.map(b=>b.id); r.batteries.forEach(b=>LABELS[b.id]=b.label); solarHist=r.solar||{}; render();
 }
 $('btn').onclick=async()=>{ $('btn').disabled=true; await fetch(PLUGIN+(paused?'/resume':'/pause')+'?format=json'); await loadStatus(); $('btn').disabled=false; };
 function connect(){
@@ -104,6 +108,6 @@ function connect(){
       mm=path.match(/^notifications\.electrical\.batteries\.(.+)$/); if(mm) notes[mm[1]]=value||{state:'normal'};
     } render(); };
 }
-loadStatus().then(connect); setInterval(render,10000);
+loadStatus().then(connect); setInterval(render,10000); setInterval(loadStatus,120000);
 $('hint').textContent='Lesezeichen für den App-Modus: '+location.origin+PLUGIN+'/pause  ·  Ansicht: '+location.origin+'/signalk-daly-companion/';
 </script></body></html>

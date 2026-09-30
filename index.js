@@ -29,6 +29,8 @@ module.exports = function (app) {
   const unsubs = [];
   const alarmState = {}; // key -> 'normal' | 'warn' | 'alarm'
   const lastSeen = {};   // batteryId -> ms
+  let solarHist = {};    // { mpptId: { 'YYYY-MM-DD': { wh: number, peakW: number } } }
+  let histDirty = false;
 
   plugin.schema = {
     type: 'object',
@@ -77,7 +79,7 @@ module.exports = function (app) {
   function saveState() {
     try {
       fs.mkdirSync(dataDir(), { recursive: true });
-      fs.writeFileSync(stateFile(), JSON.stringify({ pausedUntil }));
+      fs.writeFileSync(stateFile(), JSON.stringify({ pausedUntil, solarHist }));
     } catch (e) { app.debug(`state save failed: ${e.message}`); }
   }
   function loadState() {
@@ -216,6 +218,40 @@ module.exports = function (app) {
     }
   }
 
+  // ------------------------------------------------------------- solar history
+  const dayKey = (d = new Date()) => {
+    const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return z.toISOString().slice(0, 10);
+  };
+  function trimHist(h) {
+    const keep = Object.keys(h).sort().slice(-14);
+    for (const k of Object.keys(h)) if (!keep.includes(k)) delete h[k];
+  }
+  function setupSolar() {
+    // any electrical.solar.<id>.yieldToday / panelPower — discovered via full self bus
+    const un = app.streambundle.getSelfBus().onValue((n) => {
+      const m = /^electrical\.solar\.([^.]+)\.(yieldToday|panelPower)$/.exec(n.path);
+      if (!m || typeof n.value !== 'number') return;
+      const id = m[1], key = dayKey();
+      const h = (solarHist[id] = solarHist[id] || {});
+      const d = (h[key] = h[key] || { wh: 0, peakW: 0 });
+      if (m[2] === 'yieldToday') {
+        const wh = n.value / 3600; // Signal K: joules
+        if (wh > d.wh) { d.wh = Math.round(wh); histDirty = true; }
+      } else if (n.value > d.peakW) { d.peakW = Math.round(n.value); histDirty = true; }
+      if (Object.keys(h).length > 14) trimHist(h);
+    });
+    unsubs.push(un);
+  }
+  function solarSummary() {
+    const out = {};
+    for (const id of Object.keys(solarHist)) {
+      const days = Object.keys(solarHist[id]).sort().slice(-4); // today + 3 previous
+      out[id] = days.map((k) => ({ date: k, ...solarHist[id][k] }));
+    }
+    return out;
+  }
+
   // ------------------------------------------------------------- HTTP
   plugin.registerWithRouter = function (router) {
     const page = (title, body) => `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -234,7 +270,8 @@ a,button{display:inline-block;margin:10px 6px;padding:14px 22px;border-radius:10
     router.get('/status', (req, res) => res.json({
       paused: !!pausedUntil, until: pausedUntil ? new Date(pausedUntil).toISOString() : null,
       minutesLeft: pausedUntil ? mins() : 0, pauseMinutes: opts.pauseMinutes || 30,
-      batteries: batteries().map((b) => ({ id: b.batteryId, label: labelMap()[b.batteryId] || b.batteryId, device: b.device }))
+      batteries: batteries().map((b) => ({ id: b.batteryId, label: labelMap()[b.batteryId] || b.batteryId, device: b.device })),
+      solar: solarSummary()
     }));
     router.get('/', (req, res) => res.send(view()));
     router.get('/pause', async (req, res) => {
@@ -267,6 +304,7 @@ a,button{display:inline-block;margin:10px 6px;padding:14px 22px;border-radius:10
 
     // restore a pause that was running when the server restarted
     const st = loadState();
+    solarHist = (st.solarHist && typeof st.solarHist === 'object') ? st.solarHist : {};
     const dalyCfg = readDalyCfg();
     if (st.pausedUntil && st.pausedUntil > Date.now()) {
       pausedUntil = st.pausedUntil;
@@ -277,11 +315,13 @@ a,button{display:inline-block;margin:10px 6px;padding:14px 22px;border-radius:10
     }
 
     setupAlarms();
-    tickTimer = setInterval(() => { emitMode(); status(); checkStale(); }, 15000);
+    setupSolar();
+    tickTimer = setInterval(() => { emitMode(); status(); checkStale(); if (histDirty) { saveState(); histDirty = false; } }, 15000);
     emitMode(); status();
   };
 
   plugin.stop = function () {
+    if (histDirty) saveState();
     clearTimeout(resumeTimer); clearInterval(tickTimer);
     unsubs.splice(0).forEach((u) => { try { u(); } catch (e) { /* ignore */ } });
     Object.keys(alarmState).forEach((k) => delete alarmState[k]);
