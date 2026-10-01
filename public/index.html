@@ -28,7 +28,7 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:1
 .cell .bar i{display:block;height:100%;background:var(--acc)}.cell.min .bar i{background:var(--warn)}.cell.max .bar i{background:var(--ok)}
 .cell.bal{outline:1px dashed var(--acc);outline-offset:2px;border-radius:3px}
 .alarms{margin-top:8px;font-size:12.5px}.alarms div{padding:3px 0;color:var(--bad)}.alarms .warn{color:var(--warn)}
-.stale{opacity:.5}.hint{color:var(--mut);font-size:12px;padding:0 12px 10px}
+.stale .big,.stale .cells,.stale .kv,.stale .chips{opacity:.35}.stalebar{background:rgba(239,75,75,.15);color:var(--bad);border-radius:8px;padding:6px 10px;margin:4px 0 8px;font-size:12.5px;font-weight:600}.hint{color:var(--mut);font-size:12px;padding:0 12px 10px}
 </style></head><body>
 <header><span class="dot" id="dot"></span><h1>Bordenergie <small id="mode" style="color:var(--mut);font-weight:400"></small></h1>
 <button id="btn">…</button></header>
@@ -76,7 +76,8 @@ function render(){
     const temps=Object.entries(st[id]||{}).filter(([k])=>/^temperatures\./.test(k)).map(([k,val])=>`${k.split('.')[1]}: ${f(val-K,1)} °C`);
     const errs=g('bms.errors')||[]; const nts=Object.entries(notes).filter(([k])=>k.startsWith(id+'.')).filter(([,n])=>n.state!=='normal');
     const chip=(on,t,f2)=>`<span class="chip ${on===undefined?'':on?'ok':f2||'bad'}">${t}${on===undefined?'':on?' ein':' aus'}</span>`;
-    html+=`<section class="card ${stale?'stale':''}"><h2>${LABELS[id]||id}<small>${g('bms.mode')||''}${stale?' · keine Daten':''}</small></h2>
+    html+=`<section class="card ${stale?'stale':''}"><h2>${LABELS[id]||id}<small>${stale?'':(g('bms.mode')||'')}</small></h2>
+    ${stale?`<div class="stalebar">⚠ Keine BMS-Daten seit ${ts?new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'–'} – Werte sind alt (Bluetooth?)</div>`:''}
     <div class="big"><div><b>${f(v)}</b><span>V</span></div><div><b>${f(a,1)}</b><span>A</span></div><div><b>${f(w,0)}</b><span>W</span></div><div><b>${soc!=null?(soc*100).toFixed(0):'–'}</b><span>% SOC</span></div></div>
     <div class="soc"><i style="width:${soc!=null?soc*100:0}%;background:${soc<0.2?'var(--bad)':soc<0.3?'var(--warn)':'var(--ok)'}"></i></div>
     <div class="kv"><span>Rest</span><b>${f(g('bms.remainingCapacity'),1)} Ah</b><span>Zyklen</span><b>${g('bms.cycles')??'–'}</b><span>Zellen</span><b>${g('bms.cellCount')??cells.length}</b>
@@ -104,7 +105,7 @@ function connect(){
     for(const u of m.updates) for(const {path,value} of (u.values||[])){
       E[path]={v:value,t:Date.now()};
       let mm=path.match(/^electrical\.batteries\.([^.]+)\.(.+)$/);
-      if(mm){ (st[mm[1]]=st[mm[1]]||{})[mm[2]]=value; st[mm[1]]._ts=Date.now(); if(!banks.includes(mm[1])&&!/^daly/.test(mm[1])&&mm[2]==='voltage'&&LABELS[mm[1]]) banks.push(mm[1]); continue; }
+      if(mm){ (st[mm[1]]=st[mm[1]]||{})[mm[2]]=value; const uts=u.timestamp?Date.parse(u.timestamp):Date.now(); if(!st[mm[1]]._ts||uts>st[mm[1]]._ts) st[mm[1]]._ts=uts; if(!banks.includes(mm[1])&&!/^daly/.test(mm[1])&&mm[2]==='voltage'&&LABELS[mm[1]]) banks.push(mm[1]); continue; }
       if(path==='electrical.batteries.dalyAppMode'){ paused=!!value; }
       if(path==='electrical.batteries.dalyAppModeUntil'){ until=value; }
       mm=path.match(/^notifications\.electrical\.batteries\.(.+)$/); if(mm) notes[mm[1]]=value||{state:'normal'};
