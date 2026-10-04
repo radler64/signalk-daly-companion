@@ -32,6 +32,7 @@ function render(){
     return `<section class="card"><h2>${b.label}<small>${g('voltage')!=null?g('voltage').toFixed(2)+' V · ':''}${soc!=null?(soc*100).toFixed(0)+' %':''}</small></h2>
     <div class="row"><div class="l">Lade-MOSFET ${chip(ch)}<small>Laden erlauben / sperren</small></div><button class="on" ${busy?'disabled':''} onclick="cmd('${b.id}','charge',true)">Ein</button><button class="off" ${busy?'disabled':''} onclick="cmd('${b.id}','charge',false)">Aus</button></div>
     <div class="row"><div class="l">Entlade-MOSFET ${chip(di)}<small>Entladen erlauben / sperren</small></div><button class="on" ${busy?'disabled':''} onclick="cmd('${b.id}','discharge',true)">Ein</button><button class="off" ${busy?'disabled':''} onclick="cmd('${b.id}','discharge',false)">Aus</button></div>
+    <div class="row"><div class="l">BMS starten<small>beide MOSFETs ein – nach Schutzabschaltung</small></div><span></span><button class="on" ${busy?'disabled':''} onclick="start('${b.id}')">Start</button></div>
     <div class="row"><div class="l">SOC setzen<small>aktuell ${soc!=null?(soc*100).toFixed(0)+' %':'–'}</small></div><input type="number" id="soc-${b.id}" min="0" max="100" step="1" placeholder="%" value="${soc!=null?(soc*100).toFixed(0):''}"><button ${busy?'disabled':''} onclick="setSoc('${b.id}')">Setzen</button></div></section>`;}).join('');
 }
 function log(t,cls){$('log').textContent=t;$('log').className='log '+(cls||'')}
@@ -40,6 +41,7 @@ async function cmd(id,action,on){
   if(!on&&!confirm(`${name}: ${action==='charge'?'Laden':'Entladen'} wirklich SPERREN?`)) return;
   await send(id,{action,on},`${name}: ${action==='charge'?'Lade':'Entlade'}-MOSFET ${on?'ein':'aus'}`);
 }
+async function start(id){ const name=banks.find(b=>b.id===id)?.label||id; if(!confirm(`${name}: Lade- und Entlade-MOSFET einschalten?`)) return; await send(id,{action:'start'},`${name}: BMS starten`); }
 async function setSoc(id){
   const v=Number($('soc-'+id).value); const name=banks.find(b=>b.id===id)?.label||id;
   if(!(v>=0&&v<=100)) return log('SOC 0–100 % eingeben','bad');
