@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Batterie-Steuerung</title>
+<style>
+:root{--bg:#0f1216;--card:#181d24;--fg:#e8ecf1;--mut:#8a94a3;--ok:#2fbf71;--warn:#f0b429;--bad:#ef4b4b;--acc:#3b9cff;--line:#2a313b}
+@media(prefers-color-scheme:light){:root{--bg:#f2f4f7;--card:#fff;--fg:#14181f;--mut:#667085;--line:#e1e5eb}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.3 system-ui,-apple-system,sans-serif}
+header{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line)}header h1{font-size:16px;margin:0;flex:1}
+a.back{color:var(--acc);text-decoration:none;font-size:13px}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;padding:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.card h2{margin:0 0 8px;font-size:15px;display:flex;justify-content:space-between}.card h2 small{color:var(--mut);font-weight:400}
+.row{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}.row .l{font-weight:500}.row .l small{display:block;color:var(--mut);font-weight:400;font-size:12px}
+button{font:inherit;border:0;border-radius:8px;padding:9px 14px;color:#fff;background:var(--acc);cursor:pointer;min-width:64px}
+button.on{background:var(--ok)}button.off{background:var(--bad)}button:disabled{opacity:.45;cursor:default}
+input[type=number]{font:inherit;width:84px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.state{font-size:12px;padding:3px 8px;border-radius:999px;background:var(--line)}.state.ok{background:rgba(47,191,113,.18);color:var(--ok)}.state.bad{background:rgba(239,75,75,.18);color:var(--bad)}
+.log{margin:10px 12px;padding:10px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line);font-size:12.5px;color:var(--mut);min-height:40px;white-space:pre-line}
+.busy{color:var(--warn)}.hint{color:var(--mut);font-size:12px;padding:0 12px 12px}
+</style></head><body>
+<header><h1>Batterie-Steuerung</h1><a class="back" href="./">← Dashboard</a></header>
+<main id="main"></main>
+<div class="log" id="log">Bereit. Ein Befehl pausiert das Daly-Plugin kurz (~15 s), schickt den Befehl per Bluetooth und schaltet das Plugin wieder ein.</div>
+<div class="hint">Nur MOSFET ein/aus und SOC setzen. Alle anderen BMS-Parameter bleiben unangetastet (Daly-App).</div>
+<script>
+const PLUGIN='/plugins/signalk-daly-companion'; let banks=[], st={}, busy=false;
+const $=id=>document.getElementById(id);
+function render(){
+  $('main').innerHTML=banks.map(b=>{const g=p=>st[b.id]?.[p]; const soc=g('capacity.stateOfCharge'); const ch=g('bms.chargeMosfet'), di=g('bms.dischargeMosfet');
+    const chip=v=>v===undefined?'<span class="state">?</span>':v?'<span class="state ok">ein</span>':'<span class="state bad">aus</span>';
+    return `<section class="card"><h2>${b.label}<small>${g('voltage')!=null?g('voltage').toFixed(2)+' V · ':''}${soc!=null?(soc*100).toFixed(0)+' %':''}</small></h2>
+    <div class="row"><div class="l">Lade-MOSFET ${chip(ch)}<small>Laden erlauben / sperren</small></div><button class="on" ${busy?'disabled':''} onclick="cmd('${b.id}','charge',true)">Ein</button><button class="off" ${busy?'disabled':''} onclick="cmd('${b.id}','charge',false)">Aus</button></div>
+    <div class="row"><div class="l">Entlade-MOSFET ${chip(di)}<small>Entladen erlauben / sperren</small></div><button class="on" ${busy?'disabled':''} onclick="cmd('${b.id}','discharge',true)">Ein</button><button class="off" ${busy?'disabled':''} onclick="cmd('${b.id}','discharge',false)">Aus</button></div>
+    <div class="row"><div class="l">SOC setzen<small>aktuell ${soc!=null?(soc*100).toFixed(0)+' %':'–'}</small></div><input type="number" id="soc-${b.id}" min="0" max="100" step="1" placeholder="%" value="${soc!=null?(soc*100).toFixed(0):''}"><button ${busy?'disabled':''} onclick="setSoc('${b.id}')">Setzen</button></div></section>`;}).join('');
+}
+function log(t,cls){$('log').textContent=t;$('log').className='log '+(cls||'')}
+async function cmd(id,action,on){
+  const name=banks.find(b=>b.id===id)?.label||id;
+  if(!on&&!confirm(`${name}: ${action==='charge'?'Laden':'Entladen'} wirklich SPERREN?`)) return;
+  await send(id,{action,on},`${name}: ${action==='charge'?'Lade':'Entlade'}-MOSFET ${on?'ein':'aus'}`);
+}
+async function setSoc(id){
+  const v=Number($('soc-'+id).value); const name=banks.find(b=>b.id===id)?.label||id;
+  if(!(v>=0&&v<=100)) return log('SOC 0–100 % eingeben','bad');
+  if(!confirm(`${name}: SOC auf ${v} % setzen?`)) return;
+  await send(id,{action:'soc',value:v},`${name}: SOC → ${v} %`);
+}
+async function send(id,body,what){
+  busy=true; render(); log(`${what} … Daly-Plugin wird pausiert, Befehl wird gesendet (bis 30 s)`,'busy');
+  try{ const r=await fetch(`${PLUGIN}/cmd/${id}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}); const j=await r.json();
+    if(r.ok&&j.ok) log(`${what}: vom BMS bestätigt ✓  (Antwort ${j.reply}). Plugin läuft wieder, Anzeige aktualisiert sich in ~20 s.`);
+    else log(`${what}: FEHLER – ${j.error||'keine Bestätigung'}`,'bad');
+  }catch(e){ log(`${what}: FEHLER – ${e.message}`,'bad'); }
+  busy=false; render();
+}
+async function loadStatus(){ const r=await fetch(PLUGIN+'/status').then(r=>r.json()); banks=r.batteries; render(); }
+function connect(){
+  const ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/signalk/v1/stream?subscribe=none');
+  ws.onopen=()=>ws.send(JSON.stringify({context:'vessels.self',subscribe:[{path:'electrical.batteries.*',period:2000}]}));
+  ws.onclose=()=>setTimeout(connect,3000);
+  ws.onmessage=e=>{const m=JSON.parse(e.data); if(!m.updates) return; let ch=false;
+    for(const u of m.updates) for(const {path,value} of (u.values||[])){const mm=path.match(/^electrical\.batteries\.([^.]+)\.(.+)$/); if(mm){(st[mm[1]]=st[mm[1]]||{})[mm[2]]=value; ch=true;}}
+    if(ch&&!busy) render(); };
+}
+loadStatus().then(connect);
+</script></body></html>

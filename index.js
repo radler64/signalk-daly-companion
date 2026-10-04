@@ -13,6 +13,8 @@
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileP = promisify(execFile);
 
 const MODE_PATH = 'electrical.batteries.dalyAppMode';
 const UNTIL_PATH = 'electrical.batteries.dalyAppModeUntil';
@@ -252,6 +254,39 @@ module.exports = function (app) {
     return out;
   }
 
+  // ------------------------------------------------------------- BMS commands (write)
+  let cmdBusy = false;
+  async function dalyCommand(batteryId, args) {
+    const b = batteries().find((x) => x.batteryId === batteryId);
+    if (!b) throw new Error(`unknown battery ${batteryId}`);
+    if (cmdBusy) throw new Error('another command is running');
+    cmdBusy = true;
+    const wasRunning = !pausedUntil && (readDalyCfg() || {}).enabled !== false;
+    try {
+      if (wasRunning) {           // free the BLE link: BMS accepts one connection only
+        await setDalyEnabled(false);
+        await new Promise((r) => setTimeout(r, 3000));
+        await btDisconnect(b.device);
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      let out;
+      try {
+        const r = await execFileP('python3', [path.join(__dirname, 'bin', 'daly-cmd.py'), b.device, ...args], { timeout: 45000 });
+        out = r.stdout;
+      } catch (e) {
+        out = e.stdout || '';
+        if (!out) throw new Error((e.stderr || e.message || '').trim().split('\n').pop());
+      }
+      const res = JSON.parse(out.trim().split('\n').pop());
+      app.debug(`daly cmd ${batteryId} ${args.join(' ')} -> ${JSON.stringify(res)}`);
+      if (!res.ok) throw new Error('BMS did not acknowledge');
+      return res;
+    } finally {
+      cmdBusy = false;
+      if (wasRunning) setDalyEnabled(true).catch((e) => app.setPluginError(`resume failed: ${e.message}`));
+    }
+  }
+
   // ------------------------------------------------------------- HTTP
   plugin.registerWithRouter = function (router) {
     const page = (title, body) => `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -274,6 +309,16 @@ a,button{display:inline-block;margin:10px 6px;padding:14px 22px;border-radius:10
       solar: solarSummary()
     }));
     router.get('/', (req, res) => res.send(view()));
+    // POST /cmd/:battery  {action:'charge'|'discharge', on:true|false} | {action:'soc', value:0-100}
+    router.post('/cmd/:battery', async (req, res) => {
+      const { action, on, value } = req.body || {};
+      let args;
+      if (action === 'charge' || action === 'discharge') args = [action, on ? 'on' : 'off'];
+      else if (action === 'soc') { const v = Number(value); if (!(v >= 0 && v <= 100)) return res.status(400).json({ error: 'soc 0-100' }); args = ['soc', String(v)]; }
+      else return res.status(400).json({ error: 'unknown action' });
+      try { res.json(await dalyCommand(req.params.battery, args)); }
+      catch (e) { res.status(500).json({ error: e.message }); }
+    });
     router.get('/pause', async (req, res) => {
       try { const r = await pause(req.query.min); wantsJson(req) ? res.json(r) : res.send(view()); }
       catch (e) { app.setPluginError(e.message); res.status(500).send(page('Fehler', `<p>${e.message}</p>`)); }

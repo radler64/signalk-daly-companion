@@ -8,6 +8,6 @@
   "author": "Dieter Radler",
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/radler64/signalk-daly-companion.git" },
-  "files": ["index.js", "public", "README.md", "LICENSE"],
+  "files": ["index.js", "bin", "public", "README.md", "LICENSE"],
   "engines": { "node": ">=18" }
 }
