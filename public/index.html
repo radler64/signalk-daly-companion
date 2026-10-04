@@ -36,7 +36,7 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:1
 <div class="hint" id="hint"></div>
 <script>
 const PLUGIN='/plugins/signalk-daly-companion', LABELS={};
-const st={}, E={}, notes={}; let paused=false, until=null, cfg={pauseMinutes:30}, banks=[], solarHist={};
+const st={}, E={}, notes={}; let paused=false, until=null, cfg={pauseMinutes:30}, banks=[], solarHist={}, busyCmd=false;
 const $=id=>document.getElementById(id);
 const K=273.15, f=(v,d=2)=>typeof v==='number'?v.toFixed(d):'–';
 function get(id,p){const o=st[id]||{};return o[p]}
@@ -69,7 +69,7 @@ function render(){
   const main=$('main'); let html='';
   for(const id of banks){
     const g=p=>get(id,p), v=g('voltage'), a=g('current'), w=g('power'), soc=g('capacity.stateOfCharge');
-    const ts=get(id,'_ts')||0, stale=Date.now()-ts>60000;
+    const ts=get(id,'_ts')||0, stale=!busyCmd&&!paused&&Date.now()-ts>90000;
     const cells=Object.entries(st[id]||{}).filter(([k])=>/^cells\.\d+\.voltage$/.test(k)).map(([k,val])=>[+k.split('.')[1],val]).sort((x,y)=>x[0]-y[0]);
     const minC=g('cells.minimumCell'), maxC=g('cells.maximumCell'), bal=g('bms.balancing')||[];
     const lo=Math.min(...cells.map(c=>c[1]),3.0), hi=Math.max(...cells.map(c=>c[1]),3.6);
@@ -80,7 +80,7 @@ function render(){
     const errs=g('bms.errors')||[]; const nts=Object.entries(notes).filter(([k])=>k.startsWith(id+'.')).filter(([,n])=>n.state!=='normal');
     const chip=(on,t,f2)=>`<span class="chip ${on===undefined?'':on?'ok':f2||'bad'}">${t}${on===undefined?'':on?' ein':' aus'}</span>`;
     html+=`<section class="card ${stale?'stale':''}"><h2>${LABELS[id]||id}<small>${stale?'':(g('bms.mode')||'')}</small></h2>
-    ${stale?`<div class="stalebar">⚠ Keine BMS-Daten seit ${ts?new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'–'} – Werte sind alt (Bluetooth?)</div>`:''}
+    ${busyCmd?`<div class="stalebar" style="background:rgba(240,180,41,.15);color:var(--warn)">⏳ Befehl läuft – Daly-Plugin kurz pausiert, Werte folgen gleich</div>`:stale?`<div class="stalebar">⚠ Keine BMS-Daten seit ${ts?new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'–'} – Selbstheilung läuft (BLE trennen → Plugin-Neustart)</div>`:''}
     <div class="big"><div><b>${f(v)}</b><span>V</span></div><div><b>${f(a,1)}</b><span>A</span></div><div><b>${f(w,0)}</b><span>W</span></div><div><b>${soc!=null?(soc*100).toFixed(0):'–'}</b><span>% SOC</span></div></div>
     <div class="soc"><i style="width:${soc!=null?soc*100:0}%;background:${soc<0.2?'var(--bad)':soc<0.3?'var(--warn)':'var(--ok)'}"></i></div>
     <div class="kv"><span>Rest</span><b>${f(g('bms.remainingCapacity'),1)} Ah</b><span>Zyklen</span><b>${g('bms.cycles')??'–'}</b><span>Zellen</span><b>${g('bms.cellCount')??cells.length}</b>
@@ -97,7 +97,7 @@ function render(){
 }
 async function loadStatus(){
   const r=await fetch(PLUGIN+'/status').then(r=>r.json());
-  paused=r.paused; until=r.until; cfg=r; banks=r.batteries.map(b=>b.id); r.batteries.forEach(b=>LABELS[b.id]=b.label); solarHist=r.solar||{}; render();
+  paused=r.paused; until=r.until; cfg=r; banks=r.batteries.map(b=>b.id); r.batteries.forEach(b=>LABELS[b.id]=b.label); solarHist=r.solar||{}; busyCmd=!!r.busy; render();
 }
 $('btn').onclick=async()=>{ $('btn').disabled=true; await fetch(PLUGIN+(paused?'/resume':'/pause')+'?format=json'); await loadStatus(); $('btn').disabled=false; };
 function connect(){
@@ -114,6 +114,6 @@ function connect(){
       mm=path.match(/^notifications\.electrical\.batteries\.(.+)$/); if(mm) notes[mm[1]]=value||{state:'normal'};
     } render(); };
 }
-loadStatus().then(connect); setInterval(render,10000); setInterval(loadStatus,120000);
+loadStatus().then(connect); setInterval(render,10000); setInterval(loadStatus,20000);
 $('hint').textContent='Lesezeichen für den App-Modus: '+location.origin+PLUGIN+'/pause  ·  Ansicht: '+location.origin+'/signalk-daly-companion/';
 </script></body></html>

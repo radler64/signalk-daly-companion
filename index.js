@@ -208,15 +208,49 @@ module.exports = function (app) {
       });
     }
   }
+  // Self-healing: a dropped BLE link can leave BlueZ with a pending connect
+  // ("In Progress" / "br-connection-canceled") that the Daly plugin never clears
+  // and that also blocks the phone app. Step 1: disconnect the device in BlueZ.
+  // Step 2 (still no data): restart the Daly plugin.
+  const heal = {};        // batteryId -> { step, at }
+  let healBusy = false;
+  async function selfHeal(id, device, staleFor) {
+    if (healBusy || cmdBusy) return;
+    const h = (heal[id] = heal[id] || { step: 0, at: 0 });
+    if (Date.now() - h.at < 90000) return;         // one action per 90 s
+    healBusy = true;
+    try {
+      if (h.step === 0) {
+        app.debug(`heal ${id}: bluetoothctl disconnect ${device} (stale ${Math.round(staleFor / 1000)} s)`);
+        await btDisconnect(device);
+        h.step = 1;
+      } else {
+        app.debug(`heal ${id}: restarting Daly plugin`);
+        await setDalyEnabled(false);
+        await new Promise((r) => setTimeout(r, 3000));
+        for (const b of batteries()) await btDisconnect(b.device);
+        await setDalyEnabled(true);
+        h.step = 0;
+      }
+      h.at = Date.now();
+      app.setPluginStatus(`Selbstheilung ${id}: ${h.step === 1 ? 'BLE getrennt' : 'Daly-Plugin neu gestartet'}`);
+    } catch (e) { app.debug(`heal failed: ${e.message}`); }
+    finally { healBusy = false; }
+  }
   function checkStale() {
     const a = opts.alarms || {};
     if (a.enabled === false || pausedUntil) return; // paused → silence is expected
+    const dalyCfg = readDalyCfg();
+    if (dalyCfg && dalyCfg.enabled === false) return; // reader off on purpose
     const labels = labelMap(), lim = (a.staleSec || 120) * 1000;
     for (const b of batteries()) {
       const id = b.batteryId, t = lastSeen[id];
-      const stale = !t || Date.now() - t > lim;
+      const staleFor = t ? Date.now() - t : Infinity;
+      const stale = staleFor > lim;
       notify(`${id}.data`, stale ? 'warn' : 'normal',
         stale ? `${labels[id] || id}: keine BMS-Daten (Bluetooth?)` : `${labels[id] || id}: Daten ok`);
+      if (stale && t && !cmdBusy) selfHeal(id, b.device, staleFor);
+      if (!stale && heal[id]) heal[id].step = 0;
     }
   }
 
@@ -306,7 +340,8 @@ a,button{display:inline-block;margin:10px 6px;padding:14px 22px;border-radius:10
       paused: !!pausedUntil, until: pausedUntil ? new Date(pausedUntil).toISOString() : null,
       minutesLeft: pausedUntil ? mins() : 0, pauseMinutes: opts.pauseMinutes || 30,
       batteries: batteries().map((b) => ({ id: b.batteryId, label: labelMap()[b.batteryId] || b.batteryId, device: b.device })),
-      solar: solarSummary()
+      solar: solarSummary(),
+      busy: cmdBusy || healBusy
     }));
     router.get('/', (req, res) => res.send(view()));
     // POST /cmd/:battery  {action:'charge'|'discharge', on:true|false} | {action:'soc', value:0-100}
