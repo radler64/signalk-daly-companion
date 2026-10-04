@@ -13,7 +13,7 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1
 .row{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 .row:first-of-type{border-top:0}.row .l{font-weight:500}.row .l small{display:block;color:var(--mut);font-weight:400;font-size:12px}
 button{font:inherit;border:0;border-radius:8px;padding:9px 14px;color:#fff;background:var(--acc);cursor:pointer;min-width:64px}
-button.on{background:var(--ok)}button.off{background:var(--bad)}button:disabled{opacity:.45;cursor:default}
+button.on{background:var(--ok)}button.warn{background:var(--warn);color:#14181f}button.off{background:var(--bad)}button:disabled{opacity:.45;cursor:default}
 input[type=number]{font:inherit;width:84px;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 .state{font-size:12px;padding:3px 8px;border-radius:999px;background:var(--line)}.state.ok{background:rgba(47,191,113,.18);color:var(--ok)}.state.bad{background:rgba(239,75,75,.18);color:var(--bad)}
 .log{margin:10px 12px;padding:10px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line);font-size:12.5px;color:var(--mut);min-height:40px;white-space:pre-line}
@@ -22,18 +22,22 @@ input[type=number]{font:inherit;width:84px;padding:8px;border-radius:8px;border:
 <header><h1>Batterie-Steuerung</h1><a class="back" href="./">← Dashboard</a></header>
 <main id="main"></main>
 <div class="log" id="log">Bereit. Ein Befehl pausiert das Daly-Plugin kurz (~15 s), schickt den Befehl per Bluetooth und schaltet das Plugin wieder ein.</div>
-<div class="hint">Nur MOSFET ein/aus und SOC setzen. Alle anderen BMS-Parameter bleiben unangetastet (Daly-App).</div>
+<div class="hint">Nur MOSFET ein/aus, SOC setzen und Start BMS. Alle anderen BMS-Parameter bleiben unangetastet (Daly-App).</div>
 <script>
 const PLUGIN='/plugins/signalk-daly-companion'; let banks=[], st={}, busy=false;
 const $=id=>document.getElementById(id);
-function render(){
+let typed={}, deferred=false;
+function render(force){
+  const ae=document.activeElement; if(!force&&ae&&ae.tagName==='INPUT'&&$('main').contains(ae)){deferred=true;return}
+  deferred=false;
   $('main').innerHTML=banks.map(b=>{const g=p=>st[b.id]?.[p]; const soc=g('capacity.stateOfCharge'); const ch=g('bms.chargeMosfet'), di=g('bms.dischargeMosfet');
     const chip=v=>v===undefined?'<span class="state">?</span>':v?'<span class="state ok">ein</span>':'<span class="state bad">aus</span>';
     return `<section class="card"><h2>${b.label}<small>${g('voltage')!=null?g('voltage').toFixed(2)+' V · ':''}${soc!=null?(soc*100).toFixed(0)+' %':''}</small></h2>
     <div class="row"><div class="l">Lade-MOSFET ${chip(ch)}<small>Laden erlauben / sperren</small></div><button class="on" ${busy?'disabled':''} onclick="cmd('${b.id}','charge',true)">Ein</button><button class="off" ${busy?'disabled':''} onclick="cmd('${b.id}','charge',false)">Aus</button></div>
     <div class="row"><div class="l">Entlade-MOSFET ${chip(di)}<small>Entladen erlauben / sperren</small></div><button class="on" ${busy?'disabled':''} onclick="cmd('${b.id}','discharge',true)">Ein</button><button class="off" ${busy?'disabled':''} onclick="cmd('${b.id}','discharge',false)">Aus</button></div>
     <div class="row"><div class="l">BMS starten<small>beide MOSFETs ein – nach Schutzabschaltung</small></div><span></span><button class="on" ${busy?'disabled':''} onclick="start('${b.id}')">Start</button></div>
-    <div class="row"><div class="l">SOC setzen<small>aktuell ${soc!=null?(soc*100).toFixed(0)+' %':'–'}</small></div><input type="number" id="soc-${b.id}" min="0" max="100" step="1" placeholder="%" value="${soc!=null?(soc*100).toFixed(0):''}"><button ${busy?'disabled':''} onclick="setSoc('${b.id}')">Setzen</button></div></section>`;}).join('');
+    <div class="row"><div class="l">Start BMS <span class="state">Versuch</span><small>Neustart-Befehl der Daly-App (0x00) – ungetestet</small></div><span></span><button class="warn" ${busy?'disabled':''} onclick="resetBms('${b.id}')">Start</button></div>
+    <div class="row"><div class="l">SOC setzen<small>aktuell ${soc!=null?(soc*100).toFixed(0)+' %':'–'}</small></div><input type="number" id="soc-${b.id}" min="0" max="100" step="1" placeholder="%" value="${typed[b.id]??(soc!=null?(soc*100).toFixed(0):'')}" oninput="typed['${b.id}']=this.value"><button ${busy?'disabled':''} onclick="setSoc('${b.id}')">Setzen</button></div></section>`;}).join('');
 }
 function log(t,cls){$('log').textContent=t;$('log').className='log '+(cls||'')}
 async function cmd(id,action,on){
@@ -42,6 +46,9 @@ async function cmd(id,action,on){
   await send(id,{action,on},`${name}: ${action==='charge'?'Lade':'Entlade'}-MOSFET ${on?'ein':'aus'}`);
 }
 async function start(id){ const name=banks.find(b=>b.id===id)?.label||id; if(!confirm(`${name}: Lade- und Entlade-MOSFET einschalten?`)) return; await send(id,{action:'start'},`${name}: BMS starten`); }
+async function resetBms(id){ const name=banks.find(b=>b.id===id)?.label||id;
+  if(!confirm(`${name}: Start BMS (Versuch)\n\nSendet den Neustart-Befehl der Daly-App (0x00). Das BMS startet neu – für einige Sekunden kann die Bank spannungslos sein! Ungetestet.\nNur verwenden, wenn 'BMS starten' (MOSFETs) nicht hilft und die Bank ohnehin tot ist.\n\nFortfahren?`)) return;
+  await send(id,{action:'reset'},`${name}: Start BMS (Versuch)`); }
 async function setSoc(id){
   const v=Number($('soc-'+id).value); const name=banks.find(b=>b.id===id)?.label||id;
   if(!(v>=0&&v<=100)) return log('SOC 0–100 % eingeben','bad');
@@ -51,10 +58,10 @@ async function setSoc(id){
 async function send(id,body,what){
   busy=true; render(); log(`${what} … Daly-Plugin wird pausiert, Befehl wird gesendet (bis 30 s)`,'busy');
   try{ const r=await fetch(`${PLUGIN}/cmd/${id}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}); const j=await r.json();
-    if(r.ok&&j.ok) log(`${what}: vom BMS bestätigt ✓  (Antwort ${j.reply}). Plugin läuft wieder, Anzeige aktualisiert sich in ~20 s.`);
+    if(r.ok&&j.ok) log(`${what}: ${body.action==='reset'?'gesendet ✓ (BMS antwortet auf 0x00 nicht, es startet neu)':'vom BMS bestätigt ✓  (Antwort '+j.reply+')'}. Plugin läuft wieder, Anzeige aktualisiert sich in ~20 s.`);
     else log(`${what}: FEHLER – ${j.error||'keine Bestätigung'}`,'bad');
   }catch(e){ log(`${what}: FEHLER – ${e.message}`,'bad'); }
-  busy=false; render();
+  busy=false; delete typed[id]; render(true);
 }
 async function loadStatus(){ const r=await fetch(PLUGIN+'/status').then(r=>r.json()); banks=r.batteries; render(); }
 function connect(){
@@ -64,6 +71,7 @@ function connect(){
   ws.onmessage=e=>{const m=JSON.parse(e.data); if(!m.updates) return; let ch=false;
     for(const u of m.updates) for(const {path,value} of (u.values||[])){const mm=path.match(/^electrical\.batteries\.([^.]+)\.(.+)$/); if(mm){(st[mm[1]]=st[mm[1]]||{})[mm[2]]=value; ch=true;}}
     if(ch&&!busy) render(); };
+  $('main').addEventListener('focusout',()=>{ if(deferred) setTimeout(()=>render(),150); });
 }
 loadStatus().then(connect);
 </script></body></html>

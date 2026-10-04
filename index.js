@@ -344,12 +344,13 @@ a,button{display:inline-block;margin:10px 6px;padding:14px 22px;border-radius:10
       busy: cmdBusy || healBusy
     }));
     router.get('/', (req, res) => res.send(view()));
-    // POST /cmd/:battery  {action:'charge'|'discharge', on:true|false} | {action:'soc', value:0-100}
+    // POST /cmd/:battery  {action:'charge'|'discharge', on:true|false} | {action:'soc', value:0-100} | {action:'start'|'reset'}
     router.post('/cmd/:battery', async (req, res) => {
       const { action, on, value } = req.body || {};
       let args;
       if (action === 'charge' || action === 'discharge') args = [action, on ? 'on' : 'off'];
       else if (action === 'start') args = ['start'];
+      else if (action === 'reset') args = ['reset'];     // Daly app 'Start BMS' (0x00 restart), experimental
       else if (action === 'soc') { const v = Number(value); if (!(v >= 0 && v <= 100)) return res.status(400).json({ error: 'soc 0-100' }); args = ['soc', String(v)]; }
       else return res.status(400).json({ error: 'unknown action' });
       try { res.json(await dalyCommand(req.params.battery, args)); }

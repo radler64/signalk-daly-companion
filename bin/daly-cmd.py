@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""daly-cmd.py MAC (charge|discharge) (on|off) | MAC soc PERCENT
+"""daly-cmd.py MAC (charge|discharge) (on|off) | MAC soc PERCENT | MAC start | MAC reset
 Sends one write command to a Daly Smart BMS over BLE (service FFF0, write FFF2, notify FFF1)
 and prints the BMS reply as JSON. Used by signalk-daly-companion; the Daly reader plugin must be
 paused while this runs (the BMS allows a single BLE connection)."""
@@ -18,15 +18,18 @@ def build(args):
     kind = args[0]
     if kind in ("charge", "discharge"):
         on = args[1].lower() in ("on", "1", "ein", "true")
-        return frame(0xD9 if kind == "charge" else 0xDA, [1 if on else 0])
+        # Daly: 0xDA = charge MOS, 0xD9 = discharge MOS (python-daly-bms, DalyBMSInterface)
+        return frame(0xDA if kind == "charge" else 0xD9, [1 if on else 0])
     if kind == "soc":
         pct = float(args[1])
         if not 0 <= pct <= 100: raise SystemExit("soc 0-100")
         v = int(round(pct * 10))
         return frame(0x21, [0, 0, 0, 0, 0, 0, v >> 8, v & 0xFF])
     if kind == "start":   # "BMS starten": both MOSFETs on
-        return [frame(0xD9, [1]), frame(0xDA, [1])]
-    raise SystemExit("usage: charge|discharge on|off | soc PERCENT | start")
+        return [frame(0xDA, [1]), frame(0xD9, [1])]
+    if kind == "reset":   # Daly app "Start BMS"/restart: command 0x00, BMS reboots, no reply expected
+        return frame(0x00, [])
+    raise SystemExit("usage: charge|discharge on|off | soc PERCENT | start | reset")
 
 async def main(mac, args):
     reqs = build(args)
@@ -47,7 +50,8 @@ async def main(mac, args):
             await c.stop_notify(NOTIFY)
             results.append((req, rep))
             await asyncio.sleep(0.5)
-    ok = all(r is not None and r[2] == q[2] for q, r in results)
+    # reset (0x00) reboots the BMS and normally sends no reply: success = write accepted
+    ok = all((q[2] == 0x00) or (r is not None and r[2] == q[2]) for q, r in results)
     print(json.dumps({"ok": ok, "sent": [q.hex() for q, _ in results], "reply": [r.hex() if r else None for _, r in results]}))
     sys.exit(0 if ok else 2)
 
