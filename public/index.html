@@ -73,7 +73,10 @@ function render(){
     const cells=Object.entries(st[id]||{}).filter(([k])=>/^cells\.\d+\.voltage$/.test(k)).map(([k,val])=>[+k.split('.')[1],val]).sort((x,y)=>x[0]-y[0]);
     const minC=g('cells.minimumCell'), maxC=g('cells.maximumCell'), bal=g('bms.balancing')||[];
     const lo=Math.min(...cells.map(c=>c[1]),3.0), hi=Math.max(...cells.map(c=>c[1]),3.6);
-    const temps=Object.entries(st[id]||{}).filter(([k])=>/^temperatures\./.test(k)).map(([k,val])=>`${k.split('.')[1]}: ${f(val-K,1)} °C`);
+    const tmax=g('bms.maximumTemperature'), tmin=g('bms.minimumTemperature');
+    const temps=Object.entries(st[id]||{}).filter(([k,val])=>/^temperatures\./.test(k)&&typeof val==='number'
+      &&(typeof tmax!=='number'||val<=tmax+1)&&(typeof tmin!=='number'||val>=tmin-1)&&val-K>-30&&val-K<90) // Daly-Füllbytes (z.B. 160 °C) ausblenden
+      .map(([k,val])=>`${k.split('.')[1]}: ${f(val-K,1)} °C`);
     const errs=g('bms.errors')||[]; const nts=Object.entries(notes).filter(([k])=>k.startsWith(id+'.')).filter(([,n])=>n.state!=='normal');
     const chip=(on,t,f2)=>`<span class="chip ${on===undefined?'':on?'ok':f2||'bad'}">${t}${on===undefined?'':on?' ein':' aus'}</span>`;
     html+=`<section class="card ${stale?'stale':''}"><h2>${LABELS[id]||id}<small>${stale?'':(g('bms.mode')||'')}</small></h2>
