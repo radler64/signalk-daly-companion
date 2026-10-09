@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#132238"/>
+      <stop offset="1" stop-color="#0a1220"/>
+    </linearGradient>
+    <linearGradient id="fill" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2fd37f"/>
+      <stop offset="1" stop-color="#17b8a6"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b9cff" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#3b9cff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- subtle grid glow -->
+  <circle cx="256" cy="230" r="190" fill="#3b9cff" opacity=".07"/>
+  <!-- waves -->
+  <path d="M0 400 C 60 380, 100 420, 160 400 S 260 380, 320 400 S 420 420, 512 400 V512 H0Z" fill="url(#sea)" opacity=".55"/>
+  <path d="M0 430 C 70 410, 110 450, 180 430 S 290 410, 350 430 S 450 450, 512 430" fill="none" stroke="#6fb6ff" stroke-width="6" stroke-linecap="round" opacity=".7"/>
+  <!-- battery body -->
+  <g transform="translate(256 228)">
+    <rect x="-150" y="-78" width="300" height="156" rx="34" fill="none" stroke="#e8ecf1" stroke-width="16"/>
+    <rect x="150" y="-34" width="26" height="68" rx="10" fill="#e8ecf1"/>
+    <!-- charge level -->
+    <rect x="-126" y="-54" width="208" height="108" rx="20" fill="url(#fill)" filter="url(#glow)"/>
+    <!-- bolt -->
+    <path d="M18 -62 L-34 10 H4 L-14 62 L46 -14 H8 Z" fill="#0a1220" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+  </g>
+</svg>
