@@ -31,6 +31,18 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:1
 .cell.bal{outline:1px dashed var(--acc);outline-offset:2px;border-radius:3px}
 .alarms{margin-top:8px;font-size:12.5px}.alarms div{padding:3px 0;color:var(--bad)}.alarms .warn{color:var(--warn)}
 .stale .big,.stale .cells,.stale .kv,.stale .chips{opacity:.35}.stalebar{background:rgba(239,75,75,.15);color:var(--bad);border-radius:8px;padding:6px 10px;margin:4px 0 8px;font-size:12.5px;font-weight:600}.hint{color:var(--mut);font-size:12px;padding:0 12px 10px}
+/* Querformat mit wenig Höhe (Bordpanel 800×480, Handy quer): drei Spalten nebeneinander, kompakt, ohne Scrollen */
+@media(orientation:landscape) and (max-height:540px){
+header{padding-top:calc(4px + env(safe-area-inset-top));padding-bottom:4px}header h1{font-size:14px}header button{padding:5px 10px}
+main{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:6px calc(6px + env(safe-area-inset-right)) 6px calc(6px + env(safe-area-inset-left))}
+.card{padding:6px 8px;border-radius:10px}.card h2{font-size:13px;margin-bottom:2px}
+.big{grid-template-columns:repeat(2,1fr);gap:2px 4px;margin:2px 0 4px}.big b{font-size:19px}.big span{font-size:10.5px}
+.soc{height:6px;margin:2px 0 5px}
+.kv{grid-template-columns:repeat(2,auto 1fr);gap:2px 5px;font-size:11.5px}.kv2{gap:2px 6px;font-size:11.5px}
+.chips{margin:4px 0;gap:3px}.chip{font-size:10.5px;padding:2px 6px}
+.cells{grid-template-columns:repeat(4,minmax(0,1fr));gap:2px 6px;margin-top:4px}.cell{font-size:10.5px}
+.stalebar{padding:4px 6px;margin:2px 0 4px;font-size:11.5px}.alarms{margin-top:4px;font-size:11.5px}.hint{display:none}
+}
 </style></head><body>
 <header><span class="dot" id="dot"></span><h1>Bordenergie <small id="mode" style="color:var(--mut);font-weight:400"></small></h1>
 <a href="control.html" title="Batterie-Steuerung" style="color:var(--mut);text-decoration:none;font-size:18px;padding:0 4px">⚙</a><button id="btn">…</button></header>
