@@ -18,7 +18,7 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:1
 .card h2{margin:0 0 6px;font-size:15px;display:flex;justify-content:space-between;align-items:center}
 .card h2 small{color:var(--mut);font-weight:400}
 .big{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:4px 0 8px}
-.big div{text-align:center}.big b{display:block;font-size:22px;font-variant-numeric:tabular-nums}.big span{color:var(--mut);font-size:11px}
+.big div{text-align:center}.big b{display:block;font-size:22px;font-variant-numeric:tabular-nums}.big b.warn{color:var(--warn)}.big b.bad{color:var(--bad)}.big span{color:var(--mut);font-size:11px}
 .soc{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:2px 0 8px}.soc i{display:block;height:100%;background:var(--ok)}
 .kv{display:grid;grid-template-columns:repeat(3,auto 1fr);gap:4px 6px;font-size:12.5px;align-items:baseline}.kv span{color:var(--mut);white-space:nowrap}.kv b{font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 @media(max-width:420px){.kv{grid-template-columns:repeat(2,auto 1fr)}}
@@ -92,10 +92,11 @@ function render(){
       &&(typeof tmax!=='number'||val<=tmax+1)&&(typeof tmin!=='number'||val>=tmin-1)&&val-K>-30&&val-K<90) // Daly-Füllbytes (z.B. 160 °C) ausblenden
       .map(([k,val])=>`${k.split('.')[1]}: ${f(val-K,1)} °C`);
     const errs=g('bms.errors')||[]; const nts=Object.entries(notes).filter(([k])=>k.startsWith(id+'.')).filter(([,n])=>n.state!=='normal');
+    const sev=Math.max(soc<0.2?2:soc<0.3?1:0,errs.length?2:0,...nts.map(([,n])=>({warn:1,alert:1,alarm:2,emergency:2})[n.state]||0));   // schlechtester Bank-Zustand → Farbe der Spannung
     const chip=(on,t,f2)=>`<span class="chip ${on===undefined?'':on?'ok':f2||'bad'}">${t}${on===undefined?'':on?' ein':' aus'}</span>`;
     html+=`<section class="card ${stale?'stale':''}"><h2>${LABELS[id]||id}<small>${stale?'':(g('bms.mode')||'')}</small></h2>
     ${busyCmd?`<div class="stalebar" style="background:rgba(240,180,41,.15);color:var(--warn)">⏳ Befehl läuft – Daly-Plugin kurz pausiert, Werte folgen gleich</div>`:stale?`<div class="stalebar">⚠ Keine BMS-Daten seit ${ts?new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'–'} – Selbstheilung läuft (BLE trennen → Plugin-Neustart)</div>`:''}
-    <div class="big"><div><b>${f(v)}</b><span>V</span></div><div><b>${f(a,1)}</b><span>A</span></div><div><b>${f(w,0)}</b><span>W</span></div><div><b>${soc!=null?(soc*100).toFixed(0):'–'}</b><span>% SOC</span></div></div>
+    <div class="big"><div><b class="${['','warn','bad'][sev]}">${f(v)}</b><span>V</span></div><div><b>${f(a,1)}</b><span>A</span></div><div><b>${f(w,0)}</b><span>W</span></div><div><b>${soc!=null?(soc*100).toFixed(0):'–'}</b><span>% SOC</span></div></div>
     <div class="soc"><i style="width:${soc!=null?soc*100:0}%;background:${soc<0.2?'var(--bad)':soc<0.3?'var(--warn)':'var(--ok)'}"></i></div>
     <div class="kv"><span>Rest</span><b>${f(g('bms.remainingCapacity'),1)} Ah</b><span>Zyklen</span><b>${g('bms.cycles')??'–'}</b><span>Zellen</span><b>${g('bms.cellCount')??cells.length}</b>
     <span>Δ Zelle</span><b>${g('cells.deltaVoltage')!=null?(g('cells.deltaVoltage')*1000).toFixed(0)+' mV':'–'}</b><span>T max</span><b>${g('bms.maximumTemperature')!=null?f(g('bms.maximumTemperature')-K,1)+' °C':'–'}</b><span>T min</span><b>${g('bms.minimumTemperature')!=null?f(g('bms.minimumTemperature')-K,1)+' °C':'–'}</b></div>
